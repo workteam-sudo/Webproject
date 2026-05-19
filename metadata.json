@@ -1,0 +1,6 @@
+{
+  "name": "SmartUni Management System",
+  "description": "A streamlined university management system with role-based access for Admins, Faculty, and Students to manage courses, attendance, and results.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

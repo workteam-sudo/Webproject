@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'workt1282@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isFaculty() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty';
+    }
+
+    function isStudent() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'email', 'role', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.role in ['admin', 'faculty', 'student'] &&
+             (data.createdAt is timestamp || data.createdAt == request.time) &&
+             (data.keys().size() >= 4 && data.keys().size() <= 7) &&
+             (!data.keys().contains('deactivated') || data.deactivated is bool) &&
+             (!data.keys().contains('classId') || (data.classId == null || isValidId(data.classId)));
+    }
+
+    function isValidClass(data) {
+      return data.keys().hasAll(['name', 'createdAt']) &&
+             data.keys().size() == 2 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (data.createdAt is timestamp || data.createdAt == request.time);
+    }
+
+    function isValidSubject(data) {
+      return data.keys().hasAll(['name', 'classId', 'createdAt']) &&
+             data.keys().size() >= 3 && data.keys().size() <= 5 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             isValidId(data.classId) &&
+             (data.createdAt is timestamp || data.createdAt == request.time) &&
+             (!data.keys().contains('facultyId') || (data.facultyId == null || isValidId(data.facultyId)));
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['studentId', 'subjectId', 'classId', 'status', 'date']) &&
+             data.keys().size() == 5 &&
+             isValidId(data.studentId) &&
+             isValidId(data.subjectId) &&
+             isValidId(data.classId) &&
+             data.status in ['present', 'absent'] &&
+             (data.date is timestamp || data.date == request.time);
+    }
+
+    function isValidResult(data) {
+      return data.keys().hasAll(['studentId', 'subjectId', 'marks', 'totalMarks', 'updatedAt']) &&
+             data.keys().size() == 5 &&
+             isValidId(data.studentId) &&
+             isValidId(data.subjectId) &&
+             data.marks is number && data.marks >= 0 && data.marks <= data.totalMarks &&
+             data.totalMarks is number && data.totalMarks > 0 &&
+             (data.updatedAt is timestamp || data.updatedAt == request.time);
+    }
+
+    // --- Collections ---
+
+    // Users
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (
+        isAdmin() || 
+        isFaculty() || 
+        (isStudent() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && resource.data.classId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('classId', ''))
+      );
+      
+      allow create: if (
+        isAdmin() || 
+        (isSignedIn() && request.auth.uid == userId && (request.auth.token.email == 'workt1282@gmail.com' || incoming().role == 'admin'))
+      ) && isValidUser(incoming());
+      
+      allow update: if (isAdmin() || (isSignedIn() && request.auth.uid == userId && existing().role == 'admin')) && (
+        isValidUser(incoming())
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Classes
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidClass(incoming());
+      allow update: if isAdmin() && isValidClass(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Subjects
+    match /subjects/{subjectId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidSubject(incoming());
+      allow update: if (isAdmin() || (isFaculty() && existing().facultyId == request.auth.uid)) && isValidSubject(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Attendance
+    match /attendance/{attendanceId} {
+      allow create: if (
+        isAdmin() || 
+        (isFaculty() && get(/databases/$(database)/documents/subjects/$(incoming().subjectId)).data.facultyId == request.auth.uid)
+      ) && isValidAttendance(incoming());
+      
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        (isFaculty() && get(/databases/$(database)/documents/subjects/$(resource.data.subjectId)).data.facultyId == request.auth.uid) ||
+        (isStudent() && resource.data.studentId == request.auth.uid)
+      );
+      
+      allow update: if isAdmin() && isValidAttendance(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Results
+    match /results/{resultId} {
+      allow create: if (
+        isAdmin() || 
+        (isFaculty() && get(/databases/$(database)/documents/subjects/$(incoming().subjectId)).data.facultyId == request.auth.uid)
+      ) && isValidResult(incoming());
+      
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        (isFaculty() && get(/databases/$(database)/documents/subjects/$(resource.data.subjectId)).data.facultyId == request.auth.uid) ||
+        (isStudent() && resource.data.studentId == request.auth.uid)
+      );
+      
+      allow update: if (
+        isAdmin() || 
+        (isFaculty() && get(/databases/$(database)/documents/subjects/$(existing().subjectId)).data.facultyId == request.auth.uid)
+      ) && isValidResult(incoming());
+      
+      allow delete: if isAdmin();
+    }
+  }
+}

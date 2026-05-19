@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing role and metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "faculty", "student"] },
+        "classId": { "type": "string", "description": "Reference to Class (for students)" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "name", "role"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "Academic class or cohort (e.g. BSCS-1)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "Academic subject assigned to a class",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "classId": { "type": "string" },
+        "facultyId": { "type": "string", "description": "Assigned faculty member UID" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "classId"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Attendance log for a student in a subject",
+      "type": "object",
+      "properties": {
+        "subjectId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "classId": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "absent"] },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subjectId", "studentId", "status", "date"]
+    },
+    "Result": {
+      "title": "Result",
+      "description": "Academic marks for a student in a subject",
+      "type": "object",
+      "properties": {
+        "subjectId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "marks": { "type": "number" },
+        "totalMarks": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subjectId", "studentId", "marks", "totalMarks"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Collection of all system users"
+    },
+    "classes": {
+      "schema": { "$ref": "#/entities/Class" },
+      "description": "Collection of academic classes"
+    },
+    "subjects": {
+      "schema": { "$ref": "#/entities/Subject" },
+      "description": "Collection of academic subjects"
+    },
+    "attendance": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Attendance logs"
+    },
+    "results": {
+      "schema": { "$ref": "#/entities/Result" },
+      "description": "Academic results"
+    }
+  }
+}
