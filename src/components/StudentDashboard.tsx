@@ -37,21 +37,6 @@ import {
   SecondaryButton
 } from './SharedComponents';
 
-const SessionMiniCard = ({ time, subject, room, faculty }: any) => (
-  <div className="bg-white border border-stone-200/60 p-6 rounded-[2rem] shadow-sm hover:border-stone-400 transition-all group relative overflow-hidden">
-    <div className="flex justify-between items-start mb-4">
-      <div className="px-3 py-1 bg-stone-900 text-white text-[9px] font-mono font-bold rounded-lg tracking-widest">{time}</div>
-      <Badge variant="stone">Active</Badge>
-    </div>
-    <h4 className="font-bold text-stone-900 text-sm mb-1 group-hover:translate-x-1 transition-transform">{subject}</h4>
-    <p className="text-[10px] text-stone-400 font-medium mb-4">{room}</p>
-    <div className="flex items-center gap-3 pt-4 border-t border-stone-50">
-      <div className="h-8 w-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-400 group-hover:bg-stone-900 group-hover:text-white transition-all shadow-inner"><User size={14} /></div>
-      <p className="text-[10px] font-bold text-stone-600">{faculty}</p>
-    </div>
-    <div className="absolute -right-4 -bottom-4 h-16 w-16 bg-stone-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
-  </div>
-);
 
 export const StudentDashboard: React.FC<{ view: string, setView?: (v: string) => void }> = ({ view, setView }) => {
   const { user, profile } = useAuth();
@@ -60,7 +45,7 @@ export const StudentDashboard: React.FC<{ view: string, setView?: (v: string) =>
   const [classes, setClasses] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (user && profile) {
@@ -69,7 +54,6 @@ export const StudentDashboard: React.FC<{ view: string, setView?: (v: string) =>
   }, [user, profile]);
 
   const fetchStudentData = async () => {
-    setLoading(true);
     try {
       // Fetch classes to get the name of student's class
       const classesSnap = await getDocs(collection(db, 'classes'));
@@ -77,33 +61,43 @@ export const StudentDashboard: React.FC<{ view: string, setView?: (v: string) =>
       setClasses(classesData);
 
       // Fetch subjects for student's class
-      const subjectsQ = query(collection(db, 'subjects'), where('classId', '==', profile?.classId));
-      const subjectsSnap = await getDocs(subjectsQ);
-      const subjectsData = subjectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      let subjectsData: any[] = [];
+      if (profile?.classId) {
+        const subjectsQ = query(collection(db, 'subjects'), where('classId', '==', profile.classId));
+        const subjectsSnap = await getDocs(subjectsQ);
+        subjectsData = subjectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
       setSubjects(subjectsData);
 
       const facultySnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'faculty')));
       setFaculty(facultySnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-      const attQuery = query(
-        collection(db, 'attendance'), 
-        where('studentId', '==', user?.uid),
-        orderBy('date', 'desc')
-      );
-      const attSnap = await getDocs(attQuery);
-      setAttendance(attSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      let attendanceData: any[] = [];
+      if (user?.uid) {
+        const attQuery = query(
+          collection(db, 'attendance'), 
+          where('studentId', '==', user.uid),
+          orderBy('date', 'desc')
+        );
+        const attSnap = await getDocs(attQuery);
+        attendanceData = attSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+      setAttendance(attendanceData);
 
-      const resQuery = query(
-        collection(db, 'results'), 
-        where('studentId', '==', user?.uid),
-        orderBy('updatedAt', 'desc')
-      );
-      const resSnap = await getDocs(resQuery);
-      setResults(resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      let resultsData: any[] = [];
+      if (user?.uid) {
+        const resQuery = query(
+          collection(db, 'results'), 
+          where('studentId', '==', user.uid),
+          orderBy('updatedAt', 'desc')
+        );
+        const resSnap = await getDocs(resQuery);
+        resultsData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+      setResults(resultsData);
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, 'student-dashboard-data');
     }
-    setLoading(false);
   };
 
   const getSubjectName = (id: string) => subjects.find(s => s.id === id)?.name || 'Subject';
@@ -136,8 +130,8 @@ export const StudentDashboard: React.FC<{ view: string, setView?: (v: string) =>
             <div className="space-y-16">
               <div className="bg-white p-12 rounded-[3.5rem] border border-stone-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-12 relative overflow-hidden group">
                 <div className="relative z-10">
-                  <Badge variant="stone" className="mb-6 px-5 py-2">Institutional Student Portal</Badge>
-                  <h1 className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight leading-none mb-8">Welcome Back, {profile?.name}</h1>
+                  <p className="font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400 mb-3">Institutional Student Portal</p>
+                  <h1 className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight leading-none mb-6">Welcome Back, {profile?.name}</h1>
                   <div className="flex flex-wrap items-center gap-4">
                     <Badge variant="success">{getClassName(profile?.classId)}</Badge>
                     <Badge variant="default">Spring Session 2026</Badge>
@@ -161,24 +155,6 @@ export const StudentDashboard: React.FC<{ view: string, setView?: (v: string) =>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                 <div className="lg:col-span-2 space-y-12">
-                  <div className="space-y-8">
-                    <SectionTitle title="Today's Academic Sessions" icon={<CalendarDays size={20} />} />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <SessionMiniCard 
-                        time="09:00 - 10:30" 
-                        subject="Advanced Data Structures" 
-                        room="Lab 402 - Engineering Block"
-                        faculty="Dr. Sarah Jenkins"
-                      />
-                      <SessionMiniCard 
-                        time="11:00 - 12:30" 
-                        subject="Machine Learning Fundamentals" 
-                        room="Auditorium B"
-                        faculty="Prof. Michael Ross"
-                      />
-                    </div>
-                  </div>
-
                   <div className="space-y-8">
                     <SectionTitle title="Student Utilities" icon={<Target size={20} />} />
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">

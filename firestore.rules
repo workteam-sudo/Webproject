@@ -13,7 +13,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'workt1282@gmail.com' ||
+        request.auth.token.email.matches('(?i)workt1282@gmail\\.com') ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
@@ -40,71 +40,45 @@ service cloud.firestore {
 
     // --- Validation Helpers ---
     function isValidUser(data) {
-      return data.keys().hasAll(['name', 'email', 'role', 'createdAt']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
-             data.email is string && data.email.size() <= 200 &&
-             data.role in ['admin', 'faculty', 'student'] &&
-             (data.createdAt is timestamp || data.createdAt == request.time) &&
-             (data.keys().size() >= 4 && data.keys().size() <= 7) &&
-             (!data.keys().contains('deactivated') || data.deactivated is bool) &&
-             (!data.keys().contains('classId') || (data.classId == null || isValidId(data.classId)));
+      return data.keys().hasAll(['name', 'role']) &&
+             data.name is string &&
+             data.role is string;
     }
 
     function isValidClass(data) {
-      return data.keys().hasAll(['name', 'createdAt']) &&
-             data.keys().size() == 2 &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             (data.createdAt is timestamp || data.createdAt == request.time);
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() > 0;
     }
 
     function isValidSubject(data) {
-      return data.keys().hasAll(['name', 'classId', 'createdAt']) &&
-             data.keys().size() >= 3 && data.keys().size() <= 5 &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             isValidId(data.classId) &&
-             (data.createdAt is timestamp || data.createdAt == request.time) &&
-             (!data.keys().contains('facultyId') || (data.facultyId == null || isValidId(data.facultyId)));
+      return data.keys().hasAll(['name', 'classId']) &&
+             data.name is string && data.name.size() > 0 &&
+             isValidId(data.classId);
     }
 
     function isValidAttendance(data) {
       return data.keys().hasAll(['studentId', 'subjectId', 'classId', 'status', 'date']) &&
-             data.keys().size() == 5 &&
              isValidId(data.studentId) &&
              isValidId(data.subjectId) &&
              isValidId(data.classId) &&
-             data.status in ['present', 'absent'] &&
-             (data.date is timestamp || data.date == request.time);
+             data.status in ['present', 'absent'];
     }
 
     function isValidResult(data) {
-      return data.keys().hasAll(['studentId', 'subjectId', 'marks', 'totalMarks', 'updatedAt']) &&
-             data.keys().size() == 5 &&
+      return data.keys().hasAll(['studentId', 'subjectId', 'marks', 'totalMarks']) &&
              isValidId(data.studentId) &&
              isValidId(data.subjectId) &&
-             data.marks is number && data.marks >= 0 && data.marks <= data.totalMarks &&
-             data.totalMarks is number && data.totalMarks > 0 &&
-             (data.updatedAt is timestamp || data.updatedAt == request.time);
+             data.marks is number &&
+             data.totalMarks is number;
     }
 
     // --- Collections ---
 
     // Users
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isSignedIn() && (
-        isAdmin() || 
-        isFaculty() || 
-        (isStudent() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && resource.data.classId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('classId', ''))
-      );
-      
-      allow create: if (
-        isAdmin() || 
-        (isSignedIn() && request.auth.uid == userId && (request.auth.token.email == 'workt1282@gmail.com' || incoming().role == 'admin'))
-      ) && isValidUser(incoming());
-      
-      allow update: if (isAdmin() || (isSignedIn() && request.auth.uid == userId && existing().role == 'admin')) && (
-        isValidUser(incoming())
-      );
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow delete: if isAdmin();
     }
 

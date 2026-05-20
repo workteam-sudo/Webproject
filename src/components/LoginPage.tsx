@@ -5,7 +5,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Badge, PrimaryButton, SecondaryButton } from './SharedComponents';
 
 export const LoginPage: React.FC = () => {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword } = useAuth();
+  const { 
+    signInWithEmail, 
+    signUpWithEmail, 
+    signInWithGoogle, 
+    resetPassword,
+    error: authError,
+    clearError
+  } = useAuth();
   
   // Form fields
   const [email, setEmail] = useState('');
@@ -26,6 +33,7 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
     setError('');
     setSuccess('');
+    clearError();
     
     const cleanEmail = email.trim().toLowerCase();
     
@@ -47,17 +55,11 @@ export const LoginPage: React.FC = () => {
       const errorCode = err.code || '';
       
       if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
-        if (role === 'admin') {
-          message = 'Administrative credentials rejected. If you are the system architect and haven\'t established a password yet, please use "Google Authority" to bypass and create your master profile.';
-        } else {
-          message = 'Authentication failed. Please ensure your credentials are correct and that an Administrator has activated your profile in the registry.';
-        }
+        message = 'Invalid email or password.';
       } else if (errorCode === 'auth/user-not-found') {
-        if (role === 'admin') {
-          message = 'No administrator record found. Authorized personnel should use Google Login to initialize their system identity.';
-        } else {
-          message = 'Identity not registered. New Faculty and Student profiles must be established by an Administrator in the central registry first.';
-        }
+        message = 'Account not found. Please sign up first.';
+      } else if (errorCode === 'auth/email-already-in-use') {
+        message = 'This email is already registered. Please login instead.';
       } else if (errorCode === 'auth/invalid-email') {
         message = 'The email address is improperly formatted.';
       } else if (errorCode === 'auth/too-many-requests') {
@@ -78,6 +80,7 @@ export const LoginPage: React.FC = () => {
       return;
     }
     setLoading(true);
+    clearError();
     try {
       await resetPassword(email.trim().toLowerCase());
       setSuccess('Recovery link dispatched. Please check your inbox.');
@@ -91,6 +94,7 @@ export const LoginPage: React.FC = () => {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
+    clearError();
     try {
       await signInWithGoogle(role);
     } catch (err: any) {
@@ -177,9 +181,9 @@ export const LoginPage: React.FC = () => {
                   onChange={(e) => setRole(e.target.value as UserRole)}
                   className="w-full pl-6 pr-14 py-5 bg-white border border-stone-200 rounded-[1.5rem] focus:border-stone-900 focus:ring-8 focus:ring-stone-900/5 outline-none transition-all text-sm font-bold text-stone-900 appearance-none shadow-sm cursor-pointer hover:border-stone-400"
                 >
-                  <option value="student">🎓 Student Registry</option>
-                  <option value="faculty">💼 Faculty Council</option>
-                  <option value="admin">🗝️ System Administrator</option>
+                  <option value="student">Student</option>
+                  <option value="faculty">Faculty</option>
+                  <option value="admin">Admin</option>
                 </select>
               </div>
             </div>
@@ -198,7 +202,7 @@ export const LoginPage: React.FC = () => {
                 <div className="relative group">
                   <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-stone-900 transition-colors" size={20} />
                   <input 
-                    type="email" placeholder="Institutional Email" value={email} required
+                    type="email" placeholder="Email" value={email} required
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-14 pr-6 py-5 bg-stone-50/50 border border-stone-200 rounded-[1.5rem] focus:border-stone-900 focus:bg-white focus:ring-8 focus:ring-stone-900/5 outline-none transition-all text-sm font-medium hover:border-stone-400"
                   />
@@ -207,7 +211,7 @@ export const LoginPage: React.FC = () => {
                 <div className="relative group">
                   <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-stone-900 transition-colors" size={20} />
                   <input 
-                    type={showPassword ? "text" : "password"} placeholder="Access Key" value={password} required
+                    type={showPassword ? "text" : "password"} placeholder="Password" value={password} required
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-14 pr-16 py-5 bg-stone-50/50 border border-stone-200 rounded-[1.5rem] focus:border-stone-900 focus:bg-white focus:ring-8 focus:ring-stone-900/5 outline-none transition-all text-sm font-medium hover:border-stone-400"
                   />
@@ -221,16 +225,16 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <AnimatePresence>
-              {success && (
+               {success && (
                 <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-green-50 border border-green-100 p-5 rounded-2xl flex items-center gap-3">
                   <ShieldCheck className="text-green-600" size={20} />
                   <p className="text-green-800 text-[11px] font-bold uppercase tracking-widest">{success}</p>
                 </motion.div>
               )}
-              {error && (
+              {(error || authError) && (
                 <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-red-50 border border-red-100 p-5 rounded-2xl space-y-3">
-                  <p className="text-red-700 text-[11px] font-bold uppercase tracking-widest leading-relaxed">{error}</p>
-                  {error.includes('Invalid') && (
+                  <p className="text-red-700 text-[11px] font-bold uppercase tracking-widest leading-relaxed">{error || authError}</p>
+                  {(error?.includes('Invalid') || error?.includes('password')) && (
                     <button type="button" onClick={handleForgotPassword} className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-stone-400 hover:text-stone-900 underline underline-offset-4 transition-colors">Recover Password</button>
                   )}
                 </motion.div>
@@ -238,7 +242,7 @@ export const LoginPage: React.FC = () => {
             </AnimatePresence>
 
             <PrimaryButton 
-              label={isRegistering ? "Generate Identity" : "Initialize Login"} 
+              label={isRegistering ? "Sign up" : "Login"} 
               loading={loading} icon={ArrowRight} 
             />
 
@@ -248,7 +252,7 @@ export const LoginPage: React.FC = () => {
                 onClick={() => setIsRegistering(!isRegistering)}
                 className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-stone-400 hover:text-stone-900 transition-colors underline underline-offset-8"
               >
-                {isRegistering ? "Return to Secure Login" : "Initialize New Portal Identity"}
+                {isRegistering ? "Already have an account? Login" : "Don't have an account? Sign up"}
               </button>
             </div>
 
@@ -262,7 +266,7 @@ export const LoginPage: React.FC = () => {
               type="button" 
               onClick={handleGoogleLogin} 
               disabled={loading}
-              label="Google Authority"
+              label="Continue with Google"
               icon={() => (
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -275,7 +279,7 @@ export const LoginPage: React.FC = () => {
 
             <div className="pt-10 border-t border-stone-50 text-center">
               <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-stone-400 leading-relaxed italic">
-                Strategic Access Only. All logins require prior <br /> administrative verification.
+                Authentication Required for Registry Access. <br /> Students and Faculty may register independently.
               </p>
             </div>
           </form>

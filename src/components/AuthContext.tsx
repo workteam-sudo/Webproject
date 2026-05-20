@@ -37,11 +37,13 @@ interface AuthContextType {
   user: FirebaseUser | null;
   profile: UserProfile | null;
   loading: boolean;
+  error: string | null;
   signInWithGoogle: (role?: UserRole) => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name: string, role: UserRole) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -50,10 +52,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
+      setError(null);
       if (user) {
         // Immediate check for super-admin by email
         const isSuperAdmin = user.email === 'workt1282@gmail.com';
@@ -61,8 +65,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         try {
           const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
+          let docSnap = await getDoc(docRef);
           
+          if (!docSnap.exists() && user.email) {
+            // Check if a pre-enrolled profile exists for this email
+            const q = query(collection(db, 'users'), where('email', '==', user.email));
+            const qSnap = await getDocs(q);
+            
+            if (!qSnap.empty) {
+              const oldDoc = qSnap.docs[0];
+              const oldData = oldDoc.data();
+              
+              // Migrate/Unify: Create doc at UID, delete old random ID doc
+              const unifiedProfilebody = {
+                ...oldData,
+                uid: user.uid,
+                email: user.email,
+                name: oldData.name || localStorage.getItem('intended_name') || user.displayName || 'User',
+                role: oldData.role || (storedRole as UserRole) || 'student',
+                updatedAt: serverTimestamp()
+              };
+              
+              await setDoc(docRef, unifiedProfilebody);
+              if (oldDoc.id !== user.uid) {
+                await deleteDoc(doc(db, 'users', oldDoc.id));
+              }
+              docSnap = await getDoc(docRef);
+            }
+          }
+
           if (docSnap.exists()) {
             const existingProfile = docSnap.data() as UserProfile;
             
@@ -76,29 +107,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             setProfile(existingProfile);
             localStorage.removeItem('intended_role');
+            localStorage.removeItem('intended_name');
           } else {
-            // No profile exists. System Admin bypass logic.
-            if (isSuperAdmin || storedRole === 'admin') {
-              const newProfile: UserProfile = {
-                uid: user.uid,
-                email: user.email || '',
-                name: localStorage.getItem('intended_name') || user.displayName || (isSuperAdmin ? 'Super Admin' : 'System Administrator'),
-                role: 'admin',
-                createdAt: serverTimestamp(),
-              };
-              await setDoc(docRef, newProfile);
-              setProfile(newProfile);
-              localStorage.removeItem('intended_name');
-            } else {
-              // Faculty and students are NOT allowed to bypass profile checks.
-              // They must be added by an admin first.
-              await signOut(auth);
-              setProfile(null);
-            }
+            // No profile exists at all. Create one.
+            const role = (storedRole as UserRole) || (isSuperAdmin ? 'admin' : 'student');
+            const name = localStorage.getItem('intended_name') || user.displayName || (isSuperAdmin ? 'Super Admin' : 'User');
+            
+            const newProfileBody: any = {
+              uid: user.uid,
+              email: user.email || '',
+              name: name,
+              role: role,
+              createdAt: serverTimestamp(),
+            };
+
+            await setDoc(docRef, newProfileBody);
+            setProfile({ ...newProfileBody, createdAt: new Date() });
             localStorage.removeItem('intended_role');
+            localStorage.removeItem('intended_name');
           }
         } catch (err) {
           console.error("Auth sync error:", err);
+          setError("Connection failed. Registry access unreachable.");
           // If Firestore fails (e.g. permission or quota), but they are super admin, let them in with mock profile
           if (isSuperAdmin) {
             setProfile({
@@ -161,8 +191,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signOut(auth);
   };
 
+  const clearError = () => setError(null);
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword, logout }}>
+    <AuthContext.Provider value={{ user, profile, loading, error, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword, logout, clearError }}>
       {children}
     </AuthContext.Provider>
   );

@@ -5,7 +5,10 @@ import {
   getDocs, 
   serverTimestamp,
   doc,
-  updateDoc
+  updateDoc,
+  deleteDoc,
+  query,
+  where
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { handleFirestoreError, OperationType } from '../services/firestoreUtils';
@@ -30,7 +33,8 @@ import {
   ShieldX,
   UserCheck,
   UserX,
-  UserCircle
+  UserCircle,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserRole, useAuth } from './AuthContext';
@@ -53,10 +57,11 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
   const [users, setUsers] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null);
+  const [selectedFaculty, setSelectedFaculty] = useState<any | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
   const filteredUsers = users.filter(u => 
@@ -86,8 +91,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
     else setInternalView('dashboard');
   }, [view]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silent = true) => {
     try {
       const usersSnap = await getDocs(collection(db, 'users'));
       setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -100,7 +104,6 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, 'admin-dashboard-data');
     }
-    setLoading(false);
   };
 
   const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>, role: UserRole) => {
@@ -123,7 +126,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
       });
       setMessage({ type: 'success', text: `${role.charAt(0).toUpperCase() + role.slice(1)} added to registry.` });
       form.reset();
-      fetchData();
+      fetchData(true);
       setInternalView(role === 'faculty' ? 'view-faculty' : 'view-students');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'users');
@@ -147,7 +150,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
       });
       setMessage({ type: 'success', text: 'New academic class established.' });
       form.reset();
-      fetchData();
+      fetchData(true);
       setInternalView('view-classes');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'classes');
@@ -173,7 +176,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
       });
       setMessage({ type: 'success', text: 'New subject entry established.' });
       form.reset();
-      fetchData();
+      fetchData(true);
       setInternalView('view-subjects');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'subjects');
@@ -185,20 +188,67 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
   const handleAssignSubject = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const subjectId = formData.get('subjectId') as string;
-    const facultyId = formData.get('facultyId') as string;
+    const subjectId = (formData.get('subjectId') as string)?.trim();
+    const facultyId = (formData.get('facultyId') as string)?.trim();
+
+    if (!subjectId || !facultyId) {
+      setMessage({ type: 'error', text: 'Critical identification missing. Ensure both Subject and expert are selected.' });
+      return;
+    }
 
     if (submitting) return;
     setSubmitting(true);
     try {
       const subjectRef = doc(db, 'subjects', subjectId);
-      await updateDoc(subjectRef, { facultyId });
+      await updateDoc(subjectRef, { 
+        facultyId,
+        updatedAt: serverTimestamp()
+      });
       setMessage({ type: 'success', text: 'Faculty assignment finalized.' });
-      fetchData();
+      fetchData(true);
       setSelectedSubject(null);
+      setSelectedFaculty(null);
       setInternalView('view-subjects');
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'subjects');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteSubject = async (subject: any) => {
+    try {
+      if (submitting) return;
+      setSubmitting(true);
+      // Optimistic update: instantly remove the subject from UI state so it disappears
+      setSubjects(prev => prev.filter(s => s.id !== subject.id));
+      await deleteDoc(doc(db, 'subjects', subject.id));
+      setMessage({ type: 'success', text: `Subject "${subject.name}" has been removed.` });
+      fetchData(true);
+    } catch (err) {
+      console.error("Subject deletion failure:", err);
+      const errorMsg = err instanceof Error ? err.message : 'Permission Denied';
+      setMessage({ type: 'error', text: `Failed to remove subject: ${errorMsg}` });
+      fetchData(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteClass = async (cls: any) => {
+    try {
+      if (submitting) return;
+      setSubmitting(true);
+      // Optimistic update: instantly remove the class from UI state so it disappears
+      setClasses(prev => prev.filter(c => c.id !== cls.id));
+      await deleteDoc(doc(db, 'classes', cls.id));
+      setMessage({ type: 'success', text: `Class "${cls.name}" has been removed.` });
+      fetchData(true);
+    } catch (err) {
+      console.error("Class deletion failure:", err);
+      const errorMsg = err instanceof Error ? err.message : 'Permission Denied';
+      setMessage({ type: 'error', text: `Failed to remove class: ${errorMsg}` });
+      fetchData(true);
     } finally {
       setSubmitting(false);
     }
@@ -215,9 +265,84 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
         type: 'success', 
         text: `Account for ${user.name} has been ${newStatus ? 'deactivated' : 'activated'}.` 
       });
-      fetchData();
+      fetchData(true);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'users');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async (u: any) => {
+    if (!u) return;
+    try {
+      const userId = u.id || u.uid;
+      const email = u.email;
+      const role = u.role;
+      const name = u.name || email || 'this identity';
+
+      if (!userId) {
+        setMessage({ type: 'error', text: 'Error: Identity key missing. Cannot target record for erasure.' });
+        return;
+      }
+      
+      if (submitting) return;
+      setSubmitting(true);
+
+      // Optimistic update: instantly remove user from list so row fades out right away!
+      setUsers(prev => prev.filter(user => user.id !== userId));
+      
+      // 1. Cascade Deletion (Students) - Resilient wrapped
+      if (role === 'student') {
+        const collections = ['attendance', 'results'];
+        for (const collName of collections) {
+          try {
+            const q = query(collection(db, collName), where('studentId', '==', userId));
+            const snap = await getDocs(q);
+            const deletes = snap.docs.map(d => deleteDoc(doc(db, collName, d.id)));
+            await Promise.all(deletes);
+          } catch (cascadeErr) {
+            console.warn(`Non-blocking cascade cleanup failed for student collection ${collName}:`, cascadeErr);
+          }
+        }
+      }
+
+      // 2. Cascade Nullify (Faculty) - Resilient wrapped
+      if (role === 'faculty') {
+        try {
+          const q = query(collection(db, 'subjects'), where('facultyId', '==', userId));
+          const snap = await getDocs(q);
+          const updates = snap.docs.map(d => updateDoc(doc(db, 'subjects', d.id), { facultyId: null }));
+          await Promise.all(updates);
+        } catch (cascadeErr) {
+          console.warn(`Non-blocking cascade nullify failed for faculty subjects:`, cascadeErr);
+        }
+      }
+
+      // 3. Unify & Purge Primary User Document
+      await deleteDoc(doc(db, 'users', userId));
+
+      // 4. Clean up secondary email-linked duplicates
+      if (email) {
+        try {
+          const emailQ = query(collection(db, 'users'), where('email', '==', email));
+          const emailSnap = await getDocs(emailQ);
+          const secondaryDeletes = emailSnap.docs
+            .filter(d => d.id !== userId)
+            .map(d => deleteDoc(doc(db, 'users', d.id)));
+          await Promise.all(secondaryDeletes);
+        } catch (secErr) {
+          console.warn("Non-blocking secondary email cleanups failed:", secErr);
+        }
+      }
+
+      setMessage({ type: 'success', text: `Identity for ${name} has been completely purged from the registry.` });
+      fetchData(true);
+    } catch (err) {
+      console.error("Deletion failure:", err);
+      const errorMsg = err instanceof Error ? err.message : 'Permission Denied or Connection Failure';
+      setMessage({ type: 'error', text: `Purge Failed: ${errorMsg}` });
+      fetchData(true); // Restore if failure occurs
     } finally {
       setSubmitting(false);
     }
@@ -283,30 +408,6 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                       onClick={() => setView?.('subjects')} 
                     />
                   </div>
-
-                  <SectionTitle title="Recent System Access" icon={<Activity size={20} />} />
-                  <Card>
-                    <div className="divide-y divide-stone-100">
-                      {users.slice(0, 5).map((u, i) => (
-                        <motion.div 
-                          initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
-                          key={u.id} 
-                          className="p-8 flex items-center justify-between hover:bg-stone-50/50 transition-all group"
-                        >
-                          <div className="flex items-center gap-6">
-                            <div className="h-12 w-12 rounded-2xl bg-stone-50 flex items-center justify-center text-stone-400 group-hover:bg-stone-900 group-hover:text-white transition-all shadow-sm border border-stone-100">
-                              <UserSquare2 size={20} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold text-stone-900 leading-none mb-1.5">{u.name}</p>
-                              <p className="text-[10px] font-mono text-stone-400 uppercase tracking-widest leading-none">{u.role}</p>
-                            </div>
-                          </div>
-                          <Badge variant={u.role === 'admin' ? 'stone' : 'default'}>Active</Badge>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </Card>
                 </div>
                 
                 <div className="space-y-8">
@@ -419,7 +520,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                             {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
                         </div>
-                        <PrimaryButton label="Finalize Enrollment" loading={submitting} icon={ArrowRight} />
+                        <PrimaryButton type="submit" label="Finalize Enrollment" loading={submitting} icon={ArrowRight} />
                       </form>
                     </Card>
                   </div>
@@ -430,15 +531,26 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-stone-50 border-b border-stone-100">
+                          <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400 w-20">Actions</th>
                           <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400">FullName</th>
                           <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400">Class</th>
                           <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400">Institutional Identity</th>
-                          <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400 text-right">Academic Role</th>
+                          <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400 text-right text-xs">Manage</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-50">
                         {filteredUsers.filter(u => u.role === 'student').map((u, i) => (
                           <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }} key={u.id} className={`hover:bg-stone-50/50 transition-all group ${u.deactivated ? 'opacity-50' : ''}`}>
+                            <td className="p-10 py-8">
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteUser(u); }}
+                                  className="p-3 rounded-xl bg-red-50 text-red-600 border border-red-100 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                  title="Permanently Purge Record"
+                                >
+                                  <Trash2 size={20} />
+                                </button>
+                            </td>
                             <td className="p-10 py-8">
                               <div className="flex items-center gap-4">
                                 <div className="h-10 w-10 rounded-xl bg-stone-50 flex items-center justify-center text-stone-400 border border-stone-100 group-hover:bg-stone-900 group-hover:text-white transition-all shadow-inner"><Users size={16}/></div>
@@ -451,15 +563,18 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                             <td className="p-10 py-8 text-sm font-medium text-stone-500">
                               {classes.find(c => c.id === u.classId)?.name || 'Unassigned'}
                             </td>
+                            <td className="p-10 py-8">
+                              <Badge variant={u.deactivated ? 'stone' : 'default'}>{u.deactivated ? 'Suspended' : 'Undergraduate'}</Badge>
+                            </td>
                             <td className="p-10 py-8 text-right">
                               <div className="flex items-center justify-end gap-3">
-                                <Badge variant={u.deactivated ? 'stone' : 'default'}>{u.deactivated ? 'Suspended' : 'Undergraduate'}</Badge>
                                 <button 
-                                  onClick={() => toggleUserStatus(u)}
-                                  className={`p-2 rounded-xl transition-all ${u.deactivated ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleUserStatus(u); }}
+                                  className={`p-2.5 rounded-xl transition-all border ${u.deactivated ? 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' : 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100'}`}
                                   title={u.deactivated ? 'Activate Account' : 'Deactivate Account'}
                                 >
-                                  {u.deactivated ? <UserCheck size={16} /> : <UserX size={16} />}
+                                  {u.deactivated ? <UserCheck size={18} /> : <UserX size={18} />}
                                 </button>
                               </div>
                             </td>
@@ -483,7 +598,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                       <form onSubmit={(e) => handleCreateUser(e, 'faculty')} className="space-y-8">
                         <FormInput name="name" label="Professor Full Name" placeholder="e.g. Dr. Helena Thorne" disabled={submitting} />
                         <FormInput name="email" label="Professional Staff Email" type="email" placeholder="e.g. h.thorne@uni.ac.uk" disabled={submitting} />
-                        <PrimaryButton label="Establish Appointment" loading={submitting} icon={ArrowRight} />
+                        <PrimaryButton type="submit" label="Establish Appointment" loading={submitting} icon={ArrowRight} />
                       </form>
                     </Card>
                   </div>
@@ -494,6 +609,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-stone-50 border-b border-stone-100">
+                          <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400 w-20">Purge</th>
                           <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400">Professor Identity</th>
                           <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400">Contact Email</th>
                           <th className="p-10 font-mono text-[10px] uppercase font-bold tracking-[0.3em] text-stone-400 text-right">Department Access</th>
@@ -502,6 +618,16 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                       <tbody className="divide-y divide-stone-50">
                         {filteredUsers.filter(u => u.role === 'faculty').map((u, i) => (
                           <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }} key={u.id} className={`hover:bg-stone-50/50 transition-all group ${u.deactivated ? 'opacity-50' : ''}`}>
+                            <td className="p-10 py-8">
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteUser(u); }}
+                                  className="p-3 rounded-xl bg-red-50 text-red-600 border border-red-100 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                  title="Permanently Purge Record"
+                                >
+                                  <Trash2 size={20} />
+                                </button>
+                            </td>
                             <td className="p-10 py-8">
                               <div className="flex items-center gap-4">
                                 <div className="h-10 w-10 rounded-xl bg-stone-50 flex items-center justify-center text-stone-400 border border-stone-100 group-hover:bg-stone-900 group-hover:text-white transition-all shadow-inner"><UserSquare2 size={16}/></div>
@@ -514,13 +640,27 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                             <td className="p-10 py-8 text-sm font-medium text-stone-500">{u.email}</td>
                             <td className="p-10 py-8 text-right">
                               <div className="flex items-center justify-end gap-3">
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedFaculty(u);
+                                    setInternalView('assign-subject');
+                                  }}
+                                  className="p-2.5 px-4 bg-stone-900 text-white rounded-xl text-[9px] font-bold uppercase tracking-widest hover:bg-stone-800 transition-all flex items-center gap-2"
+                                  title="Assign Subject"
+                                >
+                                  <BookPlus size={14} />
+                                  Assign
+                                </button>
                                 <Badge variant="stone">{u.deactivated ? 'Inactive' : 'Academic Faculty'}</Badge>
                                 <button 
-                                  onClick={() => toggleUserStatus(u)}
-                                  className={`p-2 rounded-xl transition-all ${u.deactivated ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleUserStatus(u); }}
+                                  className={`p-2.5 rounded-xl transition-all border ${u.deactivated ? 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' : 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100'}`}
                                   title={u.deactivated ? 'Activate Account' : 'Deactivate Account'}
                                 >
-                                  {u.deactivated ? <UserCheck size={16} /> : <UserX size={16} />}
+                                  {u.deactivated ? <UserCheck size={18} /> : <UserX size={18} />}
                                 </button>
                               </div>
                             </td>
@@ -543,7 +683,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                       </div>
                       <form onSubmit={handleAddClass} className="space-y-8">
                         <FormInput name="name" label="Class Name" placeholder="e.g. BSCS-1, Section A" disabled={submitting} />
-                        <PrimaryButton label="Register Class" loading={submitting} icon={ArrowRight} />
+                        <PrimaryButton type="submit" label="Register Class" loading={submitting} icon={ArrowRight} />
                       </form>
                     </Card>
                   </div>
@@ -569,7 +709,17 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                               {users.filter(u => u.classId === c.id).length} Students
                             </td>
                             <td className="p-10 py-8 text-right text-xs text-stone-400">
-                              {c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                              <div className="flex items-center justify-end gap-3">
+                                <span>{c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString() : 'N/A'}</span>
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteClass(c); }}
+                                  className="p-2 rounded-xl bg-stone-50 text-stone-400 hover:bg-red-50 hover:text-red-600 transition-all border border-stone-100"
+                                  title="Remove Class"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </td>
                           </motion.tr>
                         ))}
@@ -597,7 +747,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                             {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
                         </div>
-                        <PrimaryButton label="Register Subject" loading={submitting} icon={ArrowRight} />
+                        <PrimaryButton type="submit" label="Register Subject" loading={submitting} icon={ArrowRight} />
                       </form>
                     </Card>
                   </div>
@@ -636,11 +786,21 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                               )}
                             </td>
                             <td className="p-10 py-8 text-right">
-                            <SecondaryButton 
-                              label={s.facultyId ? 'Reassign' : 'Allocate Expert'}
-                              onClick={() => { setSelectedSubject(s); setInternalView('assign-subject'); }} 
-                              className="!py-2.5 !px-6 !w-fit !text-[9px]"
-                            />
+                              <div className="flex items-center justify-end gap-3">
+                                <SecondaryButton 
+                                  label={s.facultyId ? 'Reassign' : 'Allocate Expert'}
+                                  onClick={() => { setSelectedSubject(s); setInternalView('assign-subject'); }} 
+                                  className="!py-2.5 !px-6 !w-fit !text-[9px]"
+                                />
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteSubject(s); }}
+                                  className="p-2.5 rounded-xl bg-stone-50 text-stone-400 hover:bg-red-50 hover:text-red-600 transition-all border border-stone-100"
+                                  title="Remove Subject"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </td>
                           </motion.tr>
                         ))}
@@ -660,8 +820,9 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                         </div>
                       </div>
                       <form onSubmit={handleAssignSubject} className="space-y-8">
-                        <input type="hidden" name="subjectId" value={selectedSubject?.id || ''} />
-                        {!selectedSubject && (
+                        {selectedSubject ? (
+                          <input type="hidden" name="subjectId" value={selectedSubject.id} />
+                        ) : (
                           <div>
                             <label className="block text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-stone-400 mb-4 ml-1">Target Subject</label>
                             <select name="subjectId" required disabled={submitting} className="w-full p-5 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-8 focus:ring-stone-900/5 focus:border-stone-900 transition-all text-sm font-bold appearance-none shadow-sm cursor-pointer hover:border-stone-300">
@@ -672,20 +833,24 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
                         )}
                         <div>
                           <label className="block text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-stone-400 mb-4 ml-1">Designated Professor</label>
-                          <select name="facultyId" defaultValue={selectedSubject?.facultyId || ''} required disabled={submitting} className="w-full p-5 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-8 focus:ring-stone-900/5 focus:border-stone-900 transition-all text-sm font-bold appearance-none shadow-sm cursor-pointer hover:border-stone-300">
+                          <select name="facultyId" defaultValue={selectedFaculty?.id || selectedFaculty?.uid || selectedSubject?.facultyId || ''} required disabled={submitting} className="w-full p-5 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-8 focus:ring-stone-900/5 focus:border-stone-900 transition-all text-sm font-bold appearance-none shadow-sm cursor-pointer hover:border-stone-300">
                             <option value="">Choose academic expert...</option>
                             {users.filter(u => u.role === 'faculty').map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                           </select>
                         </div>
                         <div className="flex gap-4 pt-4">
-                          {selectedSubject && (
+                          {(selectedSubject || selectedFaculty) && (
                             <SecondaryButton 
                               label="Cancel Selection" 
-                              onClick={() => { setSelectedSubject(null); setInternalView('view-subjects'); }}
+                              onClick={() => { 
+                                setSelectedSubject(null); 
+                                setSelectedFaculty(null);
+                                setInternalView(selectedFaculty ? 'view-faculty' : 'view-subjects'); 
+                              }}
                               className="flex-1"
                             />
                           )}
-                          <PrimaryButton label={selectedSubject ? "Finalize" : "Establish Matrix"} loading={submitting} icon={ArrowRight} className="flex-[2]" />
+                          <PrimaryButton type="submit" label={(selectedSubject || selectedFaculty) ? "Finalize" : "Establish Matrix"} loading={submitting} icon={ArrowRight} className="flex-[2]" />
                         </div>
                       </form>
                     </Card>

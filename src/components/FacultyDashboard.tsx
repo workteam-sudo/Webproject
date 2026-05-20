@@ -72,7 +72,7 @@ export const FacultyDashboard: React.FC<{ view: string, setView?: (v: string) =>
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
   const [resultsLogs, setResultsLogs] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -88,7 +88,6 @@ export const FacultyDashboard: React.FC<{ view: string, setView?: (v: string) =>
   }, [view]);
 
   const fetchAllData = async () => {
-    setLoading(true);
     try {
       const subjectsQ = query(collection(db, 'subjects'), where('facultyId', '==', user?.uid));
       const subjectsSnap = await getDocs(subjectsQ);
@@ -117,7 +116,6 @@ export const FacultyDashboard: React.FC<{ view: string, setView?: (v: string) =>
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, 'faculty-dashboard-data');
     }
-    setLoading(false);
   };
 
   const handleAttendance = async (studentId: string, status: 'present' | 'absent') => {
@@ -241,24 +239,6 @@ export const FacultyDashboard: React.FC<{ view: string, setView?: (v: string) =>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                 <div className="lg:col-span-2 space-y-12">
-                  <div className="space-y-8">
-                    <SectionTitle title="Current Teaching Schedule" icon={<CalendarDays size={20} />} />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <LectureMiniCard 
-                        time="09:00 - 10:30" 
-                        subject="Design Patterns" 
-                        targetClass="BSCS-3A"
-                        room="Seminar Hall 2"
-                      />
-                      <LectureMiniCard 
-                        time="14:00 - 15:30" 
-                        subject="Software Engineering" 
-                        targetClass="BSE-2B"
-                        room="Computer Lab 1"
-                      />
-                    </div>
-                  </div>
-
                   <div className="space-y-8">
                     <SectionTitle title="Faculty Directives" icon={<Target size={20} />} />
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">

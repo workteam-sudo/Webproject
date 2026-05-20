@@ -52,6 +52,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onViewCha
             <>
               <NavItem icon={<Users size={18} />} label="Faculty" active={currentView === 'faculty'} onClick={() => onViewChange('faculty')} />
               <NavItem icon={<Users size={18} />} label="Students" active={currentView === 'students'} onClick={() => onViewChange('students')} />
+              <NavItem icon={<BookOpen size={18} />} label="Subjects" active={currentView === 'subjects'} onClick={() => onViewChange('subjects')} />
               <NavItem icon={<GraduationCap size={18} />} label="Classes" active={currentView === 'classes'} onClick={() => onViewChange('classes')} />
             </>
           )}
