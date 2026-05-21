@@ -26,7 +26,7 @@ function AppContent() {
     }
   }, [loading, user, profile, location.pathname, navigate]);
 
-  if (loading) {
+  if (loading || (user && !profile)) {
     return (
       <div className="flex h-screen items-center justify-center bg-stone-50">
         <div className="flex flex-col items-center gap-6">
@@ -36,7 +36,7 @@ function AppContent() {
           </div>
           <div className="text-center">
             <p className="font-mono text-[10px] uppercase font-bold tracking-[0.4em] text-stone-900 mb-2">System Initialization</p>
-            <p className="text-[10px] font-mono text-stone-400 uppercase tracking-widest">Verifying Security Protocols...</p>
+            <p className="text-[10px] font-mono text-stone-400 uppercase tracking-widest">Configuring Security Protocols...</p>
           </div>
         </div>
       </div>
@@ -45,46 +45,6 @@ function AppContent() {
 
   if (!user) {
     return <LoginPage />;
-  }
-
-  if (!profile) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-stone-50 p-6">
-        <div className="max-w-md w-full bg-white border border-stone-200 rounded-[3rem] p-12 text-center shadow-xl">
-          {error ? (
-            <>
-              <div className="h-20 w-20 bg-red-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-red-100">
-                <ShieldCheck className="h-10 w-10 text-red-600" />
-              </div>
-              <h2 className="text-2xl font-bold tracking-tight text-stone-900 mb-4 uppercase">Registry Error</h2>
-              <p className="text-stone-500 text-sm mb-10 leading-relaxed font-medium">{error}</p>
-            </>
-          ) : (
-            <>
-              <div className="h-20 w-20 bg-stone-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-stone-100">
-                <Loader2 className="h-10 w-10 animate-spin text-stone-900" />
-              </div>
-              <h2 className="text-2xl font-bold tracking-tight text-stone-900 mb-4 uppercase">Registry Synchronization</h2>
-              <p className="text-stone-500 text-sm mb-10 leading-relaxed font-medium">Your credentials are verified, but your institutional profile is still being synchronized with the central registry.</p>
-            </>
-          )}
-          <div className="space-y-4">
-            <button 
-              onClick={() => window.location.reload()}
-              className="w-full flex items-center justify-center gap-3 bg-stone-900 text-white py-4 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-stone-800 transition-all active:scale-95"
-            >
-              {error ? 'Retry Connection' : 'Force Synchronize'}
-            </button>
-            <button 
-              onClick={logout}
-              className="w-full text-[10px] font-mono font-bold uppercase tracking-widest text-stone-400 hover:text-stone-900 transition-colors py-2"
-            >
-              Cancel & Terminal Exit
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (

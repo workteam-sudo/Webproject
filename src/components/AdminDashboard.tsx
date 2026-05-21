@@ -110,7 +110,7 @@ export const AdminDashboard: React.FC<{ view: string, setView?: (v: string) => v
     e.preventDefault();
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const email = formData.get('email') as string;
+    const email = (formData.get('email') as string || '').trim().toLowerCase();
     const name = formData.get('name') as string;
     const classId = formData.get('classId') as string;
 
